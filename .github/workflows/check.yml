@@ -1,0 +1,71 @@
+
+name: check
+
+on:
+  workflow_dispatch:
+    inputs:
+      commands:
+        description: 'JSON array of arrays'
+        required: true
+        default: '[]'
+
+jobs:
+  run-workers:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - { os: ubuntu-22.04, worker: 1, idx: 0 }
+        - { os: ubuntu-22.04, worker: 2, idx: 1 }
+        - { os: ubuntu-22.04, worker: 3, idx: 2 }
+        - { os: ubuntu-latest, worker: 1, idx: 3 }
+        - { os: ubuntu-latest, worker: 2, idx: 4 }
+        - { os: ubuntu-latest, worker: 3, idx: 5 }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        run: |
+          echo "🚀 Worker idx=${{ matrix.idx }}"
+          echo "os=${{ matrix.os }}  worker=${{ matrix.worker }}"
+          echo "Hostname: $(hostname)"
+          echo "Date: $(date)"
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Run
+        shell: bash
+        run: |
+          COMMANDS='${{ github.event.inputs.commands }}'
+          IDX=${{ matrix.idx }}
+
+          echo "$COMMANDS" | jq -r --argjson idx "$IDX" '.[$idx] // [] | .[]' \
+          | while IFS= read -r cmd; do
+              if [ -n "$cmd" ]; then
+                echo ""
+                echo "▶ [idx=$IDX] $cmd"
+                bash -c "$cmd"
+                EXIT_CODE=$?
+                if [ $EXIT_CODE -ne 0 ]; then
+                  echo ""
+                  echo "❌ Command failed: $EXIT_CODE"
+                  exit $EXIT_CODE
+                fi
+              fi
+            done
+
+          echo ""
+          echo "✅ Worker idx=$IDX completed"
+
+      - name: Summary
+        run: |
+          echo "Worker idx: ${{ matrix.idx }}"
+          echo "OS:         ${{ matrix.os }}"
+          echo "Run ID:     ${{ github.run_id }}"
